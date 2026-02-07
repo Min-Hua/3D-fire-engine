@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TruckConfig } from '../types';
-import { Settings, Truck, Ruler, ShieldAlert, Target, Crosshair } from 'lucide-react';
+import { Settings, Truck, Ruler, ShieldAlert, Target, Crosshair, Flame, RefreshCcw } from 'lucide-react';
 
 interface ConfigPanelProps {
   config: TruckConfig;
@@ -12,7 +12,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
   const joystickRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Mapping constants
   const MAX_YAW = Math.PI / 3;
   const MAX_PITCH = Math.PI / 6;
 
@@ -24,20 +23,15 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
     const centerY = rect.top + rect.height / 2;
     const radius = rect.width / 2;
 
-    // Calculate normalized offset (-1 to 1)
     let dx = (clientX - centerX) / radius;
     let dy = (clientY - centerY) / radius;
 
-    // Constrain to circle
     const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance > 1) {
       dx /= distance;
       dy /= distance;
     }
 
-    // Map to angles
-    // X axis -> Yaw
-    // Y axis -> Pitch (negative dy because screen Y is downward, but we want up for up)
     onChange({
       cannonYaw: dx * MAX_YAW,
       cannonPitch: -dy * MAX_PITCH
@@ -55,7 +49,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
       if (isDragging) handleJoystickMove(e.clientX, e.clientY);
     };
     const onMouseUp = () => setIsDragging(false);
-
     if (isDragging) {
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
@@ -66,39 +59,65 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
     };
   }, [isDragging, handleJoystickMove]);
 
-  // Touch support
   const onTouchStart = (e: React.TouchEvent) => {
     if (!config.isLadderDeployed) return;
     setIsDragging(true);
     handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
   };
 
-  useEffect(() => {
-    const onTouchMove = (e: TouchEvent) => {
-      if (isDragging) handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
-    };
-    const onTouchEnd = () => setIsDragging(false);
-
-    if (isDragging) {
-      window.addEventListener('touchmove', onTouchMove, { passive: false });
-      window.addEventListener('touchend', onTouchEnd);
-    }
-    return () => {
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [isDragging, handleJoystickMove]);
-
-  // Handle position calculation for the UI knob
   const knobX = (config.cannonYaw / MAX_YAW) * 50;
   const knobY = (-config.cannonPitch / MAX_PITCH) * 50;
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-slate-800/50 backdrop-blur-xl border-l border-white/5 h-full overflow-y-auto w-80">
+    <div className="flex flex-col gap-6 p-6 bg-slate-800/50 backdrop-blur-xl border-l border-white/5 h-full overflow-y-auto w-80 shadow-2xl">
       <div className="flex items-center gap-2 mb-2">
         <Settings className="w-5 h-5 text-yellow-400" />
         <h3 className="text-lg font-semibold text-white">Configurator</h3>
       </div>
+
+      {/* Incident Control Section */}
+      <section className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl space-y-4">
+        <div className="flex items-center justify-between mb-2">
+           <div className="flex items-center gap-2">
+             <Flame className="w-4 h-4 text-red-500" />
+             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Incident Control</span>
+           </div>
+           <button 
+             onClick={() => onChange({ isFireActive: true, fireHealth: 100 })}
+             className="p-1 hover:bg-red-500/20 rounded transition-colors"
+             title="Restart Incident"
+           >
+             <RefreshCcw className="w-3 h-3 text-red-400" />
+           </button>
+        </div>
+
+        <label className="block">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[9px] font-medium text-slate-400 uppercase">Fire Intensity</span>
+            <span className="text-[10px] text-red-400 font-mono">Lvl {config.fireStrength}</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            value={config.fireStrength}
+            onChange={(e) => onChange({ fireStrength: parseInt(e.target.value), fireHealth: 100 })}
+            className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500"
+          />
+        </label>
+
+        <button
+          onClick={() => onChange({ isFireActive: !config.isFireActive })}
+          className={`w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] transition-all border ${
+            config.isFireActive 
+              ? 'bg-red-500/10 border-red-500/50 text-red-500 hover:bg-red-500/20' 
+              : 'bg-slate-700 border-slate-600 text-slate-400'
+          }`}
+        >
+          {config.isFireActive ? 'Cease Fire (Debug)' : 'Ignite Scenario'}
+        </button>
+      </section>
 
       <section className="space-y-4">
         <label className="block">
@@ -118,63 +137,38 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
         </label>
 
         <div className="pt-4 border-t border-white/5 space-y-4">
-          <label className="block">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-xs font-medium text-slate-400 uppercase">Ladder Length</span>
-              <span className="text-xs text-yellow-400">{config.ladderLength}m</span>
-            </div>
-            <input
-              type="range"
-              min="3"
-              max="7"
-              step="0.1"
-              value={config.ladderLength}
-              onChange={(e) => onChange({ ladderLength: parseFloat(e.target.value) })}
-              className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-400"
-            />
-          </label>
-
           <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-white/5">
             <div className="flex items-center gap-2">
                 <Ruler className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-200">Deploy Ladder</span>
+                <span className="text-sm text-slate-200">Aerial Deploy</span>
             </div>
             <button
               onClick={() => onChange({ isLadderDeployed: !config.isLadderDeployed, outriggersExtended: !config.isLadderDeployed })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 config.isLadderDeployed ? 'bg-yellow-500' : 'bg-slate-700'
               }`}
             >
-              <span
-                className={`${
-                  config.isLadderDeployed ? 'translate-x-6' : 'translate-x-1'
-                } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-              />
+              <span className={`${config.isLadderDeployed ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
             </button>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 border border-white/5">
             <div className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-200">Siren System</span>
+                <span className="text-sm text-slate-200">Master Siren</span>
             </div>
             <button
               onClick={() => onChange({ sirenActive: !config.sirenActive })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 config.sirenActive ? 'bg-red-500' : 'bg-slate-700'
               }`}
             >
-              <span
-                className={`${
-                  config.sirenActive ? 'translate-x-6' : 'translate-x-1'
-                } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-              />
+              <span className={`${config.sirenActive ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
             </button>
           </div>
         </div>
       </section>
 
-      {/* REPLACED: Water Cannon Joystick Control */}
       <section className="pt-4 border-t border-white/5 flex flex-col items-center">
         <div className="w-full flex items-center justify-between mb-4 px-1">
           <div className="flex items-center gap-2">
@@ -183,18 +177,12 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
           </div>
           <div className="flex gap-2">
              <div className="flex flex-col items-end">
-               <span className="text-[8px] text-slate-500 font-bold">YAW</span>
-               <span className="text-[9px] text-blue-400 font-mono">{(config.cannonYaw * (180/Math.PI)).toFixed(0)}°</span>
-             </div>
-             <div className="w-px h-6 bg-white/10" />
-             <div className="flex flex-col items-end">
-               <span className="text-[8px] text-slate-500 font-bold">PITCH</span>
-               <span className="text-[9px] text-blue-400 font-mono">{(config.cannonPitch * (180/Math.PI)).toFixed(0)}°</span>
+               <span className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Target</span>
+               <span className="text-[9px] text-blue-400 font-mono">AZ {((config.cannonYaw) * (180/Math.PI)).toFixed(0)}°</span>
              </div>
           </div>
         </div>
 
-        {/* Joystick UI Component */}
         <div 
           ref={joystickRef}
           onMouseDown={onMouseDown}
@@ -203,15 +191,10 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
             config.isLadderDeployed ? 'border-blue-500/30' : 'border-slate-700 opacity-30 grayscale pointer-events-none'
           }`}
         >
-          {/* Grid lines */}
-          <div className="absolute inset-0 border border-white/5 rounded-full" />
           <div className="absolute top-1/2 left-0 w-full h-px bg-white/5 -translate-y-1/2" />
           <div className="absolute left-1/2 top-0 h-full w-px bg-white/5 -translate-x-1/2" />
-          
-          {/* Tactical Crosshair Icon */}
           <Crosshair className={`w-8 h-8 opacity-10 ${config.isLadderDeployed ? 'text-blue-400' : 'text-slate-500'}`} />
 
-          {/* Joystick Handle */}
           <div 
             className={`absolute w-12 h-12 rounded-full border-2 transition-transform shadow-2xl flex items-center justify-center ${
               isDragging ? 'scale-110 border-blue-400 bg-blue-500/20' : 'border-blue-500/50 bg-slate-800'
@@ -225,12 +208,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
             <div className={`w-3 h-3 rounded-full ${isDragging ? 'bg-blue-400 animate-pulse' : 'bg-blue-500/50'}`} />
           </div>
         </div>
-
-        {!config.isLadderDeployed && (
-          <p className="mt-2 text-[9px] text-red-400/60 font-mono uppercase animate-pulse">
-            System Locked • Deploy Ladder
-          </p>
-        )}
       </section>
 
       <div className="mt-auto pt-6 border-t border-white/5">
@@ -245,10 +222,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
               <span className={config.outriggersExtended ? 'text-green-400' : 'text-red-400'}>
                 {config.outriggersExtended ? 'LOCKED' : 'UNSTABLE'}
               </span>
-            </div>
-            <div className="flex justify-between text-[10px]">
-              <span className="text-slate-500">MAX HEIGHT</span>
-              <span className="text-slate-300">{(config.ladderLength * 1.5).toFixed(1)} FT</span>
             </div>
           </div>
         </div>

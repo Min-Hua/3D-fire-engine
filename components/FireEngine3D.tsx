@@ -1,324 +1,251 @@
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment, Stars, ContactShadows, Float } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Environment, Stars, ContactShadows, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { TruckConfig } from '../types';
+import { RotateCcw } from 'lucide-react';
 
 interface ModelProps {
   config: TruckConfig;
+  onUpdateHealth: (health: number) => void;
+  onReset?: () => void;
 }
 
-const TruckModel: React.FC<ModelProps> = ({ config }) => {
+const Fire: React.FC<{ config: TruckConfig; currentHealth: number }> = ({ config, currentHealth }) => {
+  const group = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    if (!group.current || !config.isFireActive || currentHealth <= 0) return;
+    
+    // Animate fire particles
+    group.current.children.forEach((child, i) => {
+      if (child instanceof THREE.Mesh && child.name === 'particle') {
+        const t = state.clock.elapsedTime + i;
+        const scale = (0.6 + Math.sin(t * 5) * 0.2) * (currentHealth / 100) * (config.fireStrength / 5);
+        child.scale.setScalar(Math.max(0.1, scale));
+        child.position.y = (Math.sin(t * 3) * 0.1) + 0.5;
+      }
+    });
+  });
+
+  if (!config.isFireActive || currentHealth <= 0) return null;
+
+  return (
+    <group ref={group} position={[15, 0, 0]}>
+      {/* Visual Health Bar (World Space) */}
+      <group position={[0, 3.5, 0]}>
+        <mesh position={[0, 0, 0]}>
+          <planeGeometry args={[3, 0.2]} />
+          <meshBasicMaterial color="#0f172a" />
+        </mesh>
+        <mesh position={[((currentHealth / 100) - 1) * 1.5, 0, 0.01]}>
+          <planeGeometry args={[(currentHealth / 100) * 3, 0.2]} />
+          <meshBasicMaterial color="#ef4444" />
+        </mesh>
+        <Text
+          position={[0, 0.6, 0]}
+          fontSize={0.3}
+          color="white"
+          anchorX="center"
+        >
+          {`INCIDENT INTEGRITY: ${currentHealth.toFixed(0)}%`}
+        </Text>
+      </group>
+
+      {/* Fire Particles */}
+      {[...Array(14)].map((_, i) => (
+        <mesh key={i} name="particle" position={[(Math.random() - 0.5) * 2.2, 0, (Math.random() - 0.5) * 2.2]}>
+          <sphereGeometry args={[0.8, 12, 12]} />
+          <meshStandardMaterial 
+            color={i % 2 === 0 ? "#f97316" : "#ef4444"} 
+            emissive={i % 2 === 0 ? "#f97316" : "#ef4444"} 
+            emissiveIntensity={5} 
+            transparent 
+            opacity={0.8}
+          />
+        </mesh>
+      ))}
+      <pointLight intensity={15} distance={20} color="#f97316" position={[0, 2, 0]} />
+    </group>
+  );
+};
+
+const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth }) => {
   const ladderRef = useRef<THREE.Group>(null);
-  const bodyRef = useRef<THREE.Group>(null);
   const waterRef = useRef<THREE.Group>(null);
   const cannonBaseRef = useRef<THREE.Group>(null);
   const cannonBarrelRef = useRef<THREE.Group>(null);
+  const redStrobeRef = useRef<THREE.Mesh>(null);
+  const blueStrobeRef = useRef<THREE.Mesh>(null);
+  const redLightRef = useRef<THREE.PointLight>(null);
+  const blueLightRef = useRef<THREE.PointLight>(null);
+  
+  const internalHealthRef = useRef(config.fireHealth);
+  const lastSyncTime = useRef(0);
 
-  // Animation and interaction logic
-  useFrame(() => {
+  useEffect(() => {
+    internalHealthRef.current = config.fireHealth;
+  }, [config.fireHealth]);
+
+  useFrame((state) => {
+    // 1. Ladder Movement
     if (ladderRef.current) {
-      const targetRotationZ = config.isLadderDeployed ? Math.PI / 4 : 0.05; 
-      ladderRef.current.rotation.z = THREE.MathUtils.lerp(
-        ladderRef.current.rotation.z,
-        targetRotationZ,
-        0.05
-      );
+      const targetRotationZ = config.isLadderDeployed ? Math.PI / 8 : 0.05; 
+      ladderRef.current.rotation.z = THREE.MathUtils.lerp(ladderRef.current.rotation.z, targetRotationZ, 0.05);
     }
 
+    // 2. Cannon Aiming
     if (cannonBaseRef.current) {
-      cannonBaseRef.current.rotation.y = THREE.MathUtils.lerp(
-        cannonBaseRef.current.rotation.y,
-        config.cannonYaw,
-        0.1
-      );
+      cannonBaseRef.current.rotation.y = THREE.MathUtils.lerp(cannonBaseRef.current.rotation.y, config.cannonYaw, 0.1);
     }
     if (cannonBarrelRef.current) {
-      cannonBarrelRef.current.rotation.z = THREE.MathUtils.lerp(
-        cannonBarrelRef.current.rotation.z,
-        config.cannonPitch,
-        0.1
-      );
+      cannonBarrelRef.current.rotation.z = THREE.MathUtils.lerp(cannonBarrelRef.current.rotation.z, config.cannonPitch, 0.1);
     }
 
+    // 3. Siren Strobe Effect
+    if (config.sirenActive) {
+      const t = state.clock.elapsedTime * 10;
+      const redIntensity = Math.sin(t) > 0 ? 10 : 0;
+      const blueIntensity = Math.sin(t + Math.PI) > 0 ? 10 : 0;
+      
+      if (redStrobeRef.current) (redStrobeRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = redIntensity;
+      if (blueStrobeRef.current) (blueStrobeRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = blueIntensity;
+      if (redLightRef.current) redLightRef.current.intensity = redIntensity * 5;
+      if (blueLightRef.current) blueLightRef.current.intensity = blueIntensity * 5;
+    } else {
+      if (redStrobeRef.current) (redStrobeRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+      if (blueStrobeRef.current) (blueStrobeRef.current.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+      if (redLightRef.current) redLightRef.current.intensity = 0;
+      if (blueLightRef.current) blueLightRef.current.intensity = 0;
+    }
+
+    // 4. Water and Extinguishing
     if (waterRef.current && config.isLadderDeployed) {
       waterRef.current.visible = true;
-      waterRef.current.children.forEach((child, i) => {
-        child.position.x += 0.25;
-        child.position.y -= 0.035 * (child.position.x * 0.4);
-        child.scale.multiplyScalar(0.985);
-        if (child.position.x > 6) {
+      waterRef.current.children.forEach((child) => {
+        child.position.x += 0.35;
+        child.position.y -= 0.025 * (child.position.x * 0.4); 
+        child.scale.multiplyScalar(0.99); 
+        
+        if (child.position.x > 18) {
           child.position.x = 0;
           child.position.y = 0;
           child.scale.set(1, 1, 1);
         }
       });
+
+      if (config.isFireActive && internalHealthRef.current > 0) {
+        const isAimingAtFire = Math.abs(config.cannonYaw) < 0.20 && config.cannonPitch < -0.05 && config.cannonPitch > -0.25;
+        if (isAimingAtFire) {
+          const damage = 0.6 / (config.fireStrength * 0.5 + 1);
+          internalHealthRef.current = Math.max(0, internalHealthRef.current - damage);
+          
+          if (state.clock.elapsedTime - lastSyncTime.current > 0.15 || internalHealthRef.current === 0) {
+            onUpdateHealth(internalHealthRef.current);
+            lastSyncTime.current = state.clock.elapsedTime;
+          }
+        }
+      }
     } else if (waterRef.current) {
       waterRef.current.visible = false;
     }
   });
 
-  const wheelPositions = useMemo(() => [
-    [2.8, 0.35, 1.0], [2.8, 0.35, -1.0],   // Front Axle
-    [0.6, 0.35, 1.0], [0.6, 0.35, -1.0],   // Mid Axle
-    [-0.5, 0.35, 1.0], [-0.5, 0.35, -1.0], // Tandem 1
-    [-1.6, 0.35, 1.0], [-1.6, 0.35, -1.0], // Tandem 2
-  ], []);
-
-  // Shared Materials for realism
-  const paintMaterial = <meshPhysicalMaterial 
-    color={config.bodyColor} 
-    metalness={0.2} 
-    roughness={0.1} 
-    clearcoat={1} 
-    clearcoatRoughness={0.05} 
-  />;
-
-  const chromeMaterial = <meshStandardMaterial 
-    color="#ffffff" 
-    metalness={1.0} 
-    roughness={0.05} 
-    envMapIntensity={2}
-  />;
-
-  const diamondPlateMaterial = <meshStandardMaterial 
-    color="#64748b" 
-    metalness={0.8} 
-    roughness={0.2} 
-  />;
+  const materials = useMemo(() => ({
+    paint: new THREE.MeshPhysicalMaterial({ color: config.bodyColor, metalness: 0.4, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 }),
+    chrome: new THREE.MeshStandardMaterial({ color: "#ffffff", metalness: 1.0, roughness: 0.02 }),
+    diamond: new THREE.MeshStandardMaterial({ color: "#94a3b8", metalness: 0.9, roughness: 0.1 }),
+    chassis: new THREE.MeshStandardMaterial({ color: "#0f172a" }),
+    tire: new THREE.MeshStandardMaterial({ color: "#111827", roughness: 0.9 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: "#0f172a", transparent: true, opacity: 0.8, roughness: 0, metalness: 0.8 }),
+    sirenHousing: new THREE.MeshPhysicalMaterial({ color: "#ffffff", transparent: true, opacity: 0.3, roughness: 0.1, metalness: 0.5 }),
+    redEmissive: new THREE.MeshStandardMaterial({ color: "#ff0000", emissive: "#ff0000", emissiveIntensity: 0 }),
+    blueEmissive: new THREE.MeshStandardMaterial({ color: "#0000ff", emissive: "#0000ff", emissiveIntensity: 0 }),
+  }), [config.bodyColor]);
 
   return (
-    <group ref={bodyRef}>
-      {/* CHASSIS - Detailed frame with mechanical parts */}
-      <group position={[0, 0.45, 0]}>
-        <mesh position={[0, 0, 0.4]} castShadow>
-          <boxGeometry args={[7.5, 0.15, 0.15]} />
-          <meshStandardMaterial color="#1e293b" />
-        </mesh>
-        <mesh position={[0, 0, -0.4]} castShadow>
-          <boxGeometry args={[7.5, 0.15, 0.15]} />
-          <meshStandardMaterial color="#1e293b" />
-        </mesh>
-        {/* Air tanks & fuel cells */}
-        <mesh position={[0.5, -0.1, 0]} rotation={[0, 0, Math.PI/2]}>
-          <cylinderGeometry args={[0.2, 0.2, 1.2, 16]} />
-          <meshStandardMaterial color="#334155" />
-        </mesh>
-      </group>
+    <group>
+      {/* CHASSIS */}
+      <mesh position={[0, 0.45, 0.4]} material={materials.chassis} castShadow><boxGeometry args={[7.8, 0.2, 0.2]} /></mesh>
+      <mesh position={[0, 0.45, -0.4]} material={materials.chassis} castShadow><boxGeometry args={[7.8, 0.2, 0.2]} /></mesh>
 
-      {/* CAB - Advanced detailing */}
-      <group position={[2.8, 1.35, 0]}>
-        <mesh castShadow>
-          <boxGeometry args={[2.2, 1.5, 2.3]} />
-          {paintMaterial}
-        </mesh>
+      {/* CAB */}
+      <group position={[2.8, 1.4, 0]}>
+        <mesh castShadow material={materials.paint}><boxGeometry args={[2.3, 1.6, 2.4]} /></mesh>
+        <mesh position={[0.7, 0.4, 0]} rotation={[0, 0, -0.12]} material={materials.glass}><boxGeometry args={[1.1, 0.9, 2.2]} /></mesh>
+        <mesh position={[1.16, -0.2, 0]} material={materials.chrome}><boxGeometry args={[0.02, 0.9, 2.0]} /></mesh>
+        <mesh position={[1.3, -0.6, 0]} material={materials.chrome}><boxGeometry args={[0.6, 0.5, 2.5]} /></mesh>
+        <mesh position={[1.16, -0.45, 0.9]}><circleGeometry args={[0.15, 16]} /><meshStandardMaterial emissive="#ffffff" emissiveIntensity={5} /></mesh>
+        <mesh position={[1.16, -0.45, -0.9]}><circleGeometry args={[0.15, 16]} /><meshStandardMaterial emissive="#ffffff" emissiveIntensity={5} /></mesh>
         
-        {/* Windshield & Windows */}
-        <mesh position={[0.6, 0.4, 0]} rotation={[0, 0, -0.1]}>
-          <boxGeometry args={[1.1, 0.8, 2.1]} />
-          <meshPhysicalMaterial color="#0f172a" transparent opacity={0.8} roughness={0} metalness={0.5} thickness={0.1} />
-        </mesh>
-        
-        {/* Interior Details */}
-        <mesh position={[0.4, 0.1, 0]}>
-          <boxGeometry args={[0.8, 0.1, 2.0]} />
-          <meshStandardMaterial color="#1e293b" />
-        </mesh>
-        <mesh position={[0.7, 0.1, 0.5]}><boxGeometry args={[0.3, 0.4, 0.4]} /><meshStandardMaterial color="#475569" /></mesh>
-        <mesh position={[0.7, 0.1, -0.5]}><boxGeometry args={[0.3, 0.4, 0.4]} /><meshStandardMaterial color="#475569" /></mesh>
-
-        {/* Chrome Grille & Bumper */}
-        <mesh position={[1.11, -0.2, 0]}>
-          <boxGeometry args={[0.02, 0.8, 1.9]} />
-          {chromeMaterial}
-        </mesh>
-        <mesh position={[1.2, -0.55, 0]}>
-          <boxGeometry args={[0.5, 0.45, 2.4]} />
-          {chromeMaterial}
-        </mesh>
-        {/* Headlights */}
-        <mesh position={[1.11, -0.4, 0.8]}>
-          <circleGeometry args={[0.12, 16]} />
-          <meshStandardMaterial emissive="#ffffff" emissiveIntensity={2} />
-        </mesh>
-        <mesh position={[1.11, -0.4, -0.8]}>
-          <circleGeometry args={[0.12, 16]} />
-          <meshStandardMaterial emissive="#ffffff" emissiveIntensity={2} />
-        </mesh>
-
-        {/* Real Chrome Mirrors */}
-        <group position={[0.6, 0.4, 1.2]}>
-          <mesh position={[0.1, 0, 0]}><boxGeometry args={[0.05, 0.5, 0.25]} />{chromeMaterial}</mesh>
-          <mesh position={[-0.05, 0, -0.05]} rotation={[0,0,0]}><boxGeometry args={[0.1, 0.05, 0.05]} />{chromeMaterial}</mesh>
-        </group>
-        <group position={[0.6, 0.4, -1.2]}>
-          <mesh position={[0.1, 0, 0]}><boxGeometry args={[0.05, 0.5, 0.25]} />{chromeMaterial}</mesh>
-          <mesh position={[-0.05, 0, 0.05]} rotation={[0,0,0]}><boxGeometry args={[0.1, 0.05, 0.05]} />{chromeMaterial}</mesh>
+        {/* BIG CLEAR SIREN BAR */}
+        <group position={[0, 0.9, 0]}>
+          {/* Housing */}
+          <mesh material={materials.sirenHousing}>
+            <boxGeometry args={[0.6, 0.25, 2.2]} />
+          </mesh>
+          <mesh position={[0, -0.15, 0]} material={materials.chrome}>
+            <boxGeometry args={[0.7, 0.05, 2.3]} />
+          </mesh>
+          {/* Internal Strobe Components */}
+          <mesh ref={redStrobeRef} position={[0, 0, 0.7]} material={materials.redEmissive}>
+            <boxGeometry args={[0.4, 0.15, 0.6]} />
+          </mesh>
+          <mesh ref={blueStrobeRef} position={[0, 0, -0.7]} material={materials.blueEmissive}>
+            <boxGeometry args={[0.4, 0.15, 0.6]} />
+          </mesh>
+          {/* Dynamic Lights */}
+          <pointLight ref={redLightRef} position={[0, 0.5, 0.7]} color="#ff0000" distance={20} />
+          <pointLight ref={blueLightRef} position={[0, 0.5, -0.7]} color="#0000ff" distance={20} />
         </group>
       </group>
 
-      {/* MID SECTION - Pumper / Compartment detailing */}
-      <group position={[-0.2, 1.15, 0]}>
-        <mesh castShadow>
-          <boxGeometry args={[3.8, 1.35, 2.2]} />
-          {paintMaterial}
-        </mesh>
-        
-        {/* Diamond Plate Top Walkway */}
-        <mesh position={[0, 0.68, 0]}>
-          <boxGeometry args={[3.8, 0.02, 2.1]} />
-          {diamondPlateMaterial}
-        </mesh>
-
-        {/* Compartment Handles & Intake Valves */}
-        {[-1.2, 0, 1.2].map((x) => (
-          <group key={x}>
-            {/* Doors */}
-            <mesh position={[x, -0.1, 1.11]}>
-              <boxGeometry args={[0.9, 0.85, 0.01]} />
-              <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.3} />
-            </mesh>
-            {/* Handles */}
-            <mesh position={[x, -0.1, 1.12]}>
-              <boxGeometry args={[0.4, 0.03, 0.02]} />
-              {chromeMaterial}
-            </mesh>
-            {/* Intake Valve */}
-            <mesh position={[x, -0.5, 1.11]} rotation={[0, Math.PI/2, 0]}>
-              <cylinderGeometry args={[0.1, 0.1, 0.05, 16]} />
-              {chromeMaterial}
-            </mesh>
-          </group>
-        ))}
-
-        {/* Side-Mounted Ground Ladders (Realism Add) */}
-        <group position={[0, 0.3, -1.2]}>
-          <mesh><boxGeometry args={[3.5, 0.1, 0.05]} /><meshStandardMaterial color="#94a3b8" /></mesh>
-          <mesh position={[0, 0.15, 0]}><boxGeometry args={[3.5, 0.1, 0.05]} /><meshStandardMaterial color="#94a3b8" /></mesh>
-        </group>
+      {/* BODY SECTIONS */}
+      <group position={[-0.2, 1.2, 0]}>
+        <mesh castShadow material={materials.paint}><boxGeometry args={[3.8, 1.4, 2.3]} /></mesh>
+        <mesh position={[0, 0.71, 0]} material={materials.diamond}><boxGeometry args={[3.8, 0.05, 2.2]} /></mesh>
       </group>
+      <mesh position={[-3.0, 1.2, 0]} castShadow material={materials.paint}><boxGeometry args={[1.8, 1.4, 2.3]} /></mesh>
 
-      {/* REAR TURRET / LADDER BASE */}
-      <group position={[-3.0, 1.15, 0]}>
-        <mesh castShadow>
-          <boxGeometry args={[1.8, 1.35, 2.2]} />
-          {paintMaterial}
-        </mesh>
-        <mesh position={[0, 0.7, 0]} castShadow>
-          <cylinderGeometry args={[0.8, 0.9, 0.6, 32]} />
-          <meshStandardMaterial color="#1e293b" metalness={0.8} />
-        </mesh>
-      </group>
-
-      {/* WHEELS - High Quality */}
-      {wheelPositions.map((pos, idx) => (
+      {/* WHEELS */}
+      {[ [2.8, 0.45, 1.1], [2.8, 0.45, -1.1], [0.6, 0.45, 1.1], [0.6, 0.45, -1.1], [-0.5, 0.45, 1.1], [-0.5, 0.45, -1.1], [-1.6, 0.45, 1.1], [-1.6, 0.45, -1.1] ].map((pos, idx) => (
         <group key={idx} position={pos as [number, number, number]}>
-          {/* Tire */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.43, 0.43, 0.5, 32]} />
-            <meshStandardMaterial color="#111827" roughness={0.8} />
-          </mesh>
-          {/* Deep Dish Rim */}
-          <mesh position={[0, 0, pos[2] > 0 ? 0.22 : -0.22]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.3, 0.3, 0.1, 16]} />
-            {chromeMaterial}
-          </mesh>
-          {/* Hub & Bolts (Simplified) */}
-          <mesh position={[0, 0, pos[2] > 0 ? 0.28 : -0.28]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.1, 0.1, 0.05, 8]} />
-            <meshStandardMaterial color="#475569" metalness={1} />
-          </mesh>
+          <mesh rotation={[Math.PI / 2, 0, 0]} material={materials.tire} castShadow><cylinderGeometry args={[0.45, 0.45, 0.55, 32]} /></mesh>
+          <mesh position={[0, 0, pos[2] > 0 ? 0.25 : -0.25]} rotation={[Math.PI / 2, 0, 0]} material={materials.chrome}><cylinderGeometry args={[0.3, 0.3, 0.1, 16]} /></mesh>
         </group>
       ))}
 
-      {/* STABILIZATION OUTRIGGERS */}
-      <group visible={config.outriggersExtended}>
-        {[[1.2, 1.3], [1.2, -1.3], [-2.6, 1.3], [-2.6, -1.3]].map((pos, i) => (
-          <group key={i} position={[pos[0], 0, pos[1]]}>
-            <mesh position={[0, 0.5, 0]}>
-              <boxGeometry args={[0.15, 1.0, 0.15]} />
-              <meshStandardMaterial color="#475569" metalness={1} />
-            </mesh>
-            <mesh position={[0, 0.05, 0]}>
-              <boxGeometry args={[0.7, 0.05, 0.7]} />
-              {diamondPlateMaterial}
-            </mesh>
-          </group>
-        ))}
-      </group>
-
-      {/* LADDER ASSEMBLY */}
-      <group ref={ladderRef} position={[-3.0, 2.15, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.25, 0.25, 1.4, 16]} />
-          <meshStandardMaterial color="#0f172a" />
-        </mesh>
-
-        {/* LADDER TRUSS */}
-        <group position={[config.ladderLength / 2 - 0.2, 0.45, 0]}>
-          <mesh position={[0, 0, 0.45]} castShadow>
-            <boxGeometry args={[config.ladderLength, 0.3, 0.08]} />
-            <meshStandardMaterial color="#e2e8f0" metalness={0.5} roughness={0.2} />
-          </mesh>
-          <mesh position={[0, 0, -0.45]} castShadow>
-            <boxGeometry args={[config.ladderLength, 0.3, 0.08]} />
-            <meshStandardMaterial color="#e2e8f0" metalness={0.5} roughness={0.2} />
-          </mesh>
-          {[...Array(14)].map((_, i) => (
-            <mesh key={i} position={[((i - 6.5) * config.ladderLength) / 14, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.025, 0.025, 0.9, 8]} />
-              <meshStandardMaterial color="#94a3b8" />
+      {/* LADDER & PLATFORM */}
+      <group ref={ladderRef} position={[-3.0, 2.3, 0]}>
+        <mesh rotation={[Math.PI / 2, 0, 0]} material={materials.chassis} castShadow><cylinderGeometry args={[0.3, 0.3, 1.5, 16]} /></mesh>
+        <group position={[config.ladderLength / 2, 0.5, 0]}>
+          <mesh position={[0, 0, 0.5]}><boxGeometry args={[config.ladderLength, 0.3, 0.1]} /><meshStandardMaterial color="#f1f5f9" /></mesh>
+          <mesh position={[0, 0, -0.5]}><boxGeometry args={[config.ladderLength, 0.3, 0.1]} /><meshStandardMaterial color="#f1f5f9" /></mesh>
+          {[...Array(15)].map((_, i) => (
+            <mesh key={i} position={[((i - 7) * config.ladderLength) / 15, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.03, 0.03, 1.0, 8]} /><meshStandardMaterial color="#94a3b8" />
             </mesh>
           ))}
         </group>
 
-        {/* PLATFORM (SKIP) - Realism Overhaul */}
-        <group position={[config.ladderLength - 0.2, 0.55, 0]}>
-          {/* Base */}
-          <mesh castShadow>
-            <boxGeometry args={[1.9, 0.12, 2.1]} />
-            {diamondPlateMaterial}
-          </mesh>
-          {/* Walls */}
-          <mesh position={[0.9, 0.45, 0]}><boxGeometry args={[0.08, 0.9, 2.1]} />{paintMaterial}</mesh>
-          <mesh position={[-0.9, 0.45, 0]}><boxGeometry args={[0.08, 0.9, 2.1]} />{paintMaterial}</mesh>
-          <mesh position={[0, 0.45, 1.0]}><boxGeometry args={[1.8, 0.9, 0.08]} />{paintMaterial}</mesh>
-          <mesh position={[0, 0.45, -1.0]}><boxGeometry args={[1.8, 0.9, 0.08]} />{paintMaterial}</mesh>
-          
-          {/* Chrome Handrails */}
-          <mesh position={[0, 0.95, 0]}><boxGeometry args={[1.92, 0.05, 2.12]} /><meshStandardMaterial color="#ffffff" metalness={1} wireframe /></mesh>
-          
-          {/* Internal Control Pedestal */}
-          <mesh position={[0.5, 0.3, 0.6]}><boxGeometry args={[0.3, 0.6, 0.3]} /><meshStandardMaterial color="#0f172a" /></mesh>
+        <group position={[config.ladderLength, 0.6, 0]}>
+          <mesh material={materials.diamond} castShadow><boxGeometry args={[2.0, 0.15, 2.2]} /></mesh>
+          <mesh position={[1.0, 0.5, 0]} material={materials.paint}><boxGeometry args={[0.1, 1.0, 2.2]} /></mesh>
+          <mesh position={[-1.0, 0.5, 0]} material={materials.paint}><boxGeometry args={[0.1, 1.0, 2.2]} /></mesh>
+          <mesh position={[0, 0.5, 1.1]} material={materials.paint}><boxGeometry args={[2.0, 1.0, 0.1]} /></mesh>
+          <mesh position={[0, 0.5, -1.1]} material={materials.paint}><boxGeometry args={[2.0, 1.0, 0.1]} /></mesh>
 
-          {/* Exterior Markings (Emissive) */}
-          <mesh position={[0.91, 0.2, 0]} rotation={[0, Math.PI/2, 0]}>
-            <planeGeometry args={[1.8, 0.1]} />
-            <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={0.5} />
-          </mesh>
-
-          {/* HIGH POWER FLOODS */}
-          <mesh position={[0.91, 0.7, 0.7]}><boxGeometry args={[0.02, 0.2, 0.3]} /><meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={5} /></mesh>
-          <mesh position={[0.91, 0.7, -0.7]}><boxGeometry args={[0.02, 0.2, 0.3]} /><meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={5} /></mesh>
-
-          {/* WATER CANNON */}
-          <group position={[0.9, 0.4, 0]} ref={cannonBaseRef}>
-            <mesh castShadow><sphereGeometry args={[0.22, 16, 16]} /><meshStandardMaterial color="#0f172a" metalness={1} /></mesh>
+          {/* CANNON */}
+          <group position={[1.0, 0.45, 0]} ref={cannonBaseRef}>
+            <mesh material={materials.chassis} castShadow><sphereGeometry args={[0.25, 16, 16]} /></mesh>
             <group ref={cannonBarrelRef}>
-              <mesh position={[0.35, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.08, 0.12, 0.7, 12]} />
-                <meshStandardMaterial color="#475569" metalness={1} />
-              </mesh>
-              <mesh position={[0.75, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.06, 0.08, 0.2, 12]} />
-                <meshStandardMaterial color="#ef4444" />
-              </mesh>
+              <mesh position={[0.4, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={materials.chassis}><cylinderGeometry args={[0.1, 0.15, 0.8, 12]} /></mesh>
               <group ref={waterRef} position={[0.8, 0, 0]}>
-                {[...Array(12)].map((_, i) => (
-                  <mesh key={i} position={[i * 0.6, 0, 0]}>
-                    <sphereGeometry args={[0.1 + i * 0.04, 8, 8]} />
-                    <meshBasicMaterial color="#7dd3fc" opacity={0.5} transparent />
+                {[...Array(25)].map((_, i) => (
+                  <mesh key={i} position={[i * 0.5, 0, 0]}>
+                    <sphereGeometry args={[0.12 + i * 0.03, 8, 8]} />
+                    <meshBasicMaterial color="#bae6fd" opacity={0.4} transparent />
                   </mesh>
                 ))}
               </group>
@@ -326,75 +253,67 @@ const TruckModel: React.FC<ModelProps> = ({ config }) => {
           </group>
         </group>
       </group>
-
-      {/* ROOFTOP SIREN LIGHTBAR */}
-      <group position={[3.0, 2.15, 0]}>
-        <mesh><boxGeometry args={[0.5, 0.1, 2.1]} /><meshStandardMaterial color="#0f172a" /></mesh>
-        {config.sirenActive && (
-          <group>
-            <pointLight position={[0, 0.5, 0.8]} color="#ef4444" intensity={15} distance={20} />
-            <pointLight position={[0, 0.5, -0.8]} color="#3b82f6" intensity={15} distance={20} />
-            <mesh position={[0, 0.15, 0.7]}><boxGeometry args={[0.3, 0.25, 0.6]} /><meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={2} /></mesh>
-            <mesh position={[0, 0.15, -0.7]}><boxGeometry args={[0.3, 0.25, 0.6]} /><meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={2} /></mesh>
-          </group>
-        )}
-      </group>
     </group>
   );
 };
 
-const FireEngine3D: React.FC<ModelProps> = ({ config }) => {
+const FireEngine3D: React.FC<ModelProps> = ({ config, onUpdateHealth, onReset }) => {
   return (
     <div className="w-full h-full bg-[#020617] rounded-xl overflow-hidden shadow-2xl relative border border-white/5">
-      <Canvas shadows>
-        <PerspectiveCamera makeDefault position={[18, 12, 22]} fov={28} />
-        <OrbitControls enableDamping dampingFactor={0.05} minDistance={12} maxDistance={40} target={[0, 1.5, 0]} />
-        <Environment preset="city" background={false} />
-        <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
-        <ambientLight intensity={0.4} />
-        <spotLight position={[20, 30, 20]} angle={0.3} penumbra={1} intensity={2.5} castShadow />
-        <directionalLight position={[-15, 20, -10]} intensity={1} color="#f8fafc" />
-        <TruckModel config={config} />
-        <ContactShadows position={[0, 0, 0]} opacity={0.6} scale={40} blur={2.5} far={8} />
-        <gridHelper args={[100, 100, 0x1e293b, 0x020617]} position={[0, -0.01, 0]} />
+      <Canvas shadows gl={{ antialias: true }}>
+        <PerspectiveCamera makeDefault position={[22, 14, 28]} fov={32} />
+        <OrbitControls enableDamping dampingFactor={0.05} minDistance={10} maxDistance={60} target={[6, 1, 0]} />
+        <Environment preset="city" />
+        <Stars radius={150} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
+        
+        <ambientLight intensity={1.0} />
+        <spotLight position={[30, 40, 25]} angle={0.2} penumbra={1} intensity={5} castShadow />
+        <directionalLight position={[-20, 30, -15]} intensity={2} color="#f8fafc" />
+        <pointLight position={[0, 10, 0]} intensity={1} />
+
+        <TruckModel config={config} onUpdateHealth={onUpdateHealth} />
+        <Fire config={config} currentHealth={config.fireHealth} />
+        
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
+          <planeGeometry args={[200, 200]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.8} />
+        </mesh>
+        <gridHelper args={[200, 100, 0x1e293b, 0x0f172a]} position={[0, 0, 0]} />
+        <ContactShadows position={[0, 0, 0]} opacity={0.7} scale={60} blur={2} far={10} />
       </Canvas>
       
-      {/* HUD Overlay */}
+      {/* UI Overlay */}
       <div className="absolute top-8 left-8 pointer-events-none">
         <div className="flex items-center gap-4">
-          <div className="w-2.5 h-16 bg-yellow-400 rounded-full shadow-[0_0_30px_rgba(250,204,21,0.8)]" />
+          <div className="w-2.5 h-16 bg-yellow-400 rounded-full shadow-[0_0_35px_rgba(250,204,21,1)]" />
           <div>
             <h2 className="text-white font-black text-6xl uppercase tracking-tighter leading-none italic drop-shadow-2xl">
               PLATFORM 43
             </h2>
             <p className="text-yellow-400 font-mono text-[12px] mt-1 tracking-[0.4em] uppercase flex items-center gap-2">
               <span className={`w-3.5 h-3.5 rounded-full ${config.isLadderDeployed ? 'bg-blue-400 animate-ping' : 'bg-slate-700'}`} />
-              {config.isLadderDeployed ? 'HYDRAULIC PUMP ACTIVE' : 'AERIAL STANDBY • READY'}
+              {config.isLadderDeployed ? 'EXTINGUISHING OPS ACTIVE' : 'UNIT STANDBY'}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="absolute top-8 right-8">
-        <div className="bg-slate-900/60 backdrop-blur-xl px-5 py-2 rounded-2xl border border-white/5 text-[10px] text-white font-mono uppercase tracking-[0.2em] flex items-center gap-3">
-          <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(234,179,8,1)]" />
-          Ultra-HD Rendering Mode
+      {config.fireHealth <= 0 && config.isFireActive && (
+        <div className="absolute inset-0 flex items-center justify-center bg-blue-600/10 backdrop-blur-md z-10">
+          <div className="bg-slate-900/95 p-12 rounded-[3rem] border border-blue-400/50 shadow-[0_0_100px_rgba(30,144,255,0.4)] text-center scale-110">
+            <h3 className="text-blue-400 font-black text-5xl uppercase tracking-[0.1em] italic">Code 4 - Secure</h3>
+            <p className="text-slate-400 font-mono text-sm mt-4 uppercase tracking-widest opacity-80">Incident site secured • Scene under control</p>
+            
+            <button 
+              onClick={onReset}
+              className="mt-8 flex items-center gap-3 mx-auto px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-xs rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(37,99,235,0.4)]"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Replay Scenario
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="absolute bottom-8 right-8">
-        <div className="bg-slate-950/90 backdrop-blur-2xl px-8 py-5 rounded-[2rem] border border-white/10 text-xs text-white/80 font-mono flex items-center gap-8 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-           <div className="flex flex-col items-center gap-1">
-             <span className="text-[10px] text-slate-500 font-black tracking-widest uppercase opacity-60">Azimuth</span>
-             <span className="text-blue-400 font-black text-3xl tabular-nums">{(config.cannonYaw * (180/Math.PI)).toFixed(0)}°</span>
-           </div>
-           <div className="w-px h-16 bg-white/5" />
-           <div className="flex flex-col items-center gap-1">
-             <span className="text-[10px] text-slate-500 font-black tracking-widest uppercase opacity-60">Elevation</span>
-             <span className="text-blue-400 font-black text-3xl tabular-nums">{(config.cannonPitch * (180/Math.PI)).toFixed(0)}°</span>
-           </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
