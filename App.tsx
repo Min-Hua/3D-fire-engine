@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import FireEngine3D from './components/FireEngine3D';
 import ConfigPanel from './components/ConfigPanel';
 import ExpertAssistant from './components/ExpertAssistant';
 import { TruckConfig } from './types';
-import { Info, Maximize2, Camera, Download, Flame } from 'lucide-react';
+import { Info, Maximize2, Camera, Flame } from 'lucide-react';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<TruckConfig>({
@@ -19,6 +19,10 @@ const App: React.FC = () => {
     wheelCount: 8,
     cannonYaw: 0,
     cannonPitch: 0,
+    isDriveMode: true, // Default to driving mode
+    speed: 0,
+    heading: 0,
+    position: { x: 0, y: 0, z: 0 },
     isFireActive: true,
     fireStrength: 5,
     fireHealth: 100,
@@ -29,7 +33,7 @@ const App: React.FC = () => {
   };
 
   const resetScenario = () => {
-    handleConfigChange({ fireHealth: 100, isFireActive: true });
+    handleConfigChange({ fireHealth: 100, isFireActive: true, position: { x: 0, y: 0, z: 0 }, speed: 0 });
   };
 
   return (
@@ -47,10 +51,10 @@ const App: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-white tracking-widest uppercase">FireEngine 3D Builder</h1>
-                <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30 font-bold tracking-tighter">HD REV.2</span>
+                <h1 className="text-sm font-bold text-white tracking-widest uppercase">FireEngine 3D Simulator</h1>
+                <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30 font-bold tracking-tighter">HD SIM</span>
               </div>
-              <p className="text-[10px] text-slate-500 font-mono tracking-tighter uppercase">Heavy Apparatus Configurator</p>
+              <p className="text-[10px] text-slate-500 font-mono tracking-tighter uppercase">Heavy Apparatus Drive & Config</p>
             </div>
           </div>
           
@@ -67,12 +71,8 @@ const App: React.FC = () => {
             <div className="h-4 w-px bg-slate-700 mx-2" />
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Stability</p>
-                <div className="flex gap-0.5 mt-0.5">
-                  <div className={`w-3 h-1 rounded-full transition-colors ${config.outriggersExtended ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]' : 'bg-red-500'}`} />
-                  <div className={`w-3 h-1 rounded-full transition-colors ${config.outriggersExtended ? 'bg-green-500' : 'bg-slate-700'}`} />
-                  <div className={`w-3 h-1 rounded-full transition-colors ${config.outriggersExtended ? 'bg-green-500/30' : 'bg-slate-700/30'}`} />
-                </div>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Mode</p>
+                <span className="text-[10px] font-black uppercase text-yellow-500">{config.isDriveMode ? 'Driving' : 'Builder'}</span>
               </div>
               <div className="bg-yellow-500/10 text-yellow-500 p-2 rounded-lg border border-yellow-500/20">
                 <Info className="w-5 h-5" />
@@ -86,6 +86,7 @@ const App: React.FC = () => {
           <FireEngine3D 
             config={config} 
             onUpdateHealth={(h) => handleConfigChange({ fireHealth: h })} 
+            onUpdateDrive={(d) => handleConfigChange(d)}
             onReset={resetScenario}
           />
         </div>
@@ -93,10 +94,10 @@ const App: React.FC = () => {
         {/* Telemetry Footer */}
         <footer className="grid grid-cols-4 gap-4 px-2">
             {[
-                { label: 'HYDRAULIC PRESSURE', val: '3,100 PSI', status: 'Nominal' },
-                { label: 'GROSS VEHICLE WT', val: '48,000 LBS', status: 'Max Capacity' },
+                { label: 'ENGINE STATUS', val: config.isDriveMode ? 'Running' : 'Idle', status: 'Online' },
+                { label: 'COORDINATES', val: `${config.position.x.toFixed(0)}, ${config.position.z.toFixed(0)}`, status: 'GPS Lock' },
                 { label: 'FIRE SUPPRESSION', val: `${config.fireHealth.toFixed(0)}%`, status: config.fireHealth > 0 ? 'In Progress' : 'Extinguished' },
-                { label: 'TURRET LOAD', val: '0.4T', status: 'Stable' }
+                { label: 'SYSTEM TEMP', val: '185°F', status: 'Nominal' }
             ].map((stat, i) => (
                 <div key={i} className="bg-slate-900/60 backdrop-blur-md p-3 rounded-xl border border-white/5 group hover:border-yellow-500/20 transition-all">
                     <p className="text-[9px] text-slate-500 font-black tracking-widest uppercase group-hover:text-yellow-500/60 transition-colors">{stat.label}</p>

@@ -77,46 +77,35 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
 
       {/* Incident Control Section */}
       <section className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl space-y-4">
-        <div className="flex items-center justify-between mb-2">
-           <div className="flex items-center gap-2">
-             <Flame className="w-4 h-4 text-red-500" />
-             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Incident Control</span>
-           </div>
-           <button 
-             onClick={() => onChange({ isFireActive: true, fireHealth: 100 })}
-             className="p-1 hover:bg-red-500/20 rounded transition-colors"
-             title="Restart Incident"
-           >
-             <RefreshCcw className="w-3 h-3 text-red-400" />
-           </button>
-        </div>
-
-        <label className="block">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-[9px] font-medium text-slate-400 uppercase">Fire Intensity</span>
-            <span className="text-[10px] text-red-400 font-mono">Lvl {config.fireStrength}</span>
+          <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-red-500" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">Incident Control</span>
+              </div>
+              <button 
+                  onClick={() => onChange({ isFireActive: true, fireHealth: 100 })}
+                  className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                  title="Restart Incident"
+              >
+                  <RefreshCcw className="w-3 h-3 text-red-400" />
+              </button>
           </div>
-          <input
-            type="range"
-            min="1"
-            max="10"
-            step="1"
-            value={config.fireStrength}
-            onChange={(e) => onChange({ fireStrength: parseInt(e.target.value), fireHealth: 100 })}
-            className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500"
-          />
-        </label>
 
-        <button
-          onClick={() => onChange({ isFireActive: !config.isFireActive })}
-          className={`w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] transition-all border ${
-            config.isFireActive 
-              ? 'bg-red-500/10 border-red-500/50 text-red-500 hover:bg-red-500/20' 
-              : 'bg-slate-700 border-slate-600 text-slate-400'
-          }`}
-        >
-          {config.isFireActive ? 'Cease Fire (Debug)' : 'Ignite Scenario'}
-        </button>
+          <label className="block">
+              <div className="flex justify-between items-center mb-1">
+                  <span className="text-[9px] font-medium text-slate-400 uppercase">Fire Intensity</span>
+                  <span className="text-[10px] text-red-400 font-mono">Lvl {config.fireStrength}</span>
+              </div>
+              <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  value={config.fireStrength}
+                  onChange={(e) => onChange({ fireStrength: parseInt(e.target.value), fireHealth: 100 })}
+                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500"
+              />
+          </label>
       </section>
 
       <section className="space-y-4">
@@ -170,44 +159,38 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
       </section>
 
       <section className="pt-4 border-t border-white/5 flex flex-col items-center">
-        <div className="w-full flex items-center justify-between mb-4 px-1">
-          <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-blue-400" />
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider">Monitor Control</h4>
+          <div className="w-full flex items-center justify-between mb-4 px-1">
+              <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-blue-400" />
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Monitor Control</h4>
+              </div>
           </div>
-          <div className="flex gap-2">
-             <div className="flex flex-col items-end">
-               <span className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Target</span>
-               <span className="text-[9px] text-blue-400 font-mono">AZ {((config.cannonYaw) * (180/Math.PI)).toFixed(0)}°</span>
-             </div>
-          </div>
-        </div>
-
-        <div 
-          ref={joystickRef}
-          onMouseDown={onMouseDown}
-          onTouchStart={onTouchStart}
-          className={`relative w-48 h-48 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair overflow-hidden shadow-inner ${
-            config.isLadderDeployed ? 'border-blue-500/30' : 'border-slate-700 opacity-30 grayscale pointer-events-none'
-          }`}
-        >
-          <div className="absolute top-1/2 left-0 w-full h-px bg-white/5 -translate-y-1/2" />
-          <div className="absolute left-1/2 top-0 h-full w-px bg-white/5 -translate-x-1/2" />
-          <Crosshair className={`w-8 h-8 opacity-10 ${config.isLadderDeployed ? 'text-blue-400' : 'text-slate-500'}`} />
 
           <div 
-            className={`absolute w-12 h-12 rounded-full border-2 transition-transform shadow-2xl flex items-center justify-center ${
-              isDragging ? 'scale-110 border-blue-400 bg-blue-500/20' : 'border-blue-500/50 bg-slate-800'
-            }`}
-            style={{ 
-              transform: `translate(${knobX}%, ${knobY}%)`,
-              left: 'calc(50% - 1.5rem)',
-              top: 'calc(50% - 1.5rem)'
-            }}
+              ref={joystickRef}
+              onMouseDown={onMouseDown}
+              onTouchStart={onTouchStart}
+              className={`relative w-48 h-48 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair overflow-hidden shadow-inner ${
+                  config.isLadderDeployed ? 'border-blue-500/30' : 'border-slate-700 opacity-30 grayscale pointer-events-none'
+              }`}
           >
-            <div className={`w-3 h-3 rounded-full ${isDragging ? 'bg-blue-400 animate-pulse' : 'bg-blue-500/50'}`} />
+              <div className="absolute top-1/2 left-0 w-full h-px bg-white/5 -translate-y-1/2" />
+              <div className="absolute left-1/2 top-0 h-full w-px bg-white/5 -translate-x-1/2" />
+              <Crosshair className={`w-8 h-8 opacity-10 ${config.isLadderDeployed ? 'text-blue-400' : 'text-slate-500'}`} />
+
+              <div 
+                  className={`absolute w-12 h-12 rounded-full border-2 transition-transform shadow-2xl flex items-center justify-center ${
+                      isDragging ? 'scale-110 border-blue-400 bg-blue-500/20' : 'border-blue-500/50 bg-slate-800'
+                  }`}
+                  style={{ 
+                      transform: `translate(${knobX}%, ${knobY}%)`,
+                      left: 'calc(50% - 1.5rem)',
+                      top: 'calc(50% - 1.5rem)'
+                  }}
+              >
+                  <div className={`w-3 h-3 rounded-full ${isDragging ? 'bg-blue-400 animate-pulse' : 'bg-blue-500/50'}`} />
+              </div>
           </div>
-        </div>
       </section>
 
       <div className="mt-auto pt-6 border-t border-white/5">

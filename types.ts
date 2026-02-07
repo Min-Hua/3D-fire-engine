@@ -11,6 +11,11 @@ export interface TruckConfig {
   wheelCount: number;
   cannonYaw: number;
   cannonPitch: number;
+  // Driving Properties
+  isDriveMode: boolean;
+  speed: number;
+  heading: number;
+  position: { x: number; y: number; z: number };
   // Fire Simulation Properties
   isFireActive: boolean;
   fireStrength: number; // 1 to 10
