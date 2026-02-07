@@ -1,7 +1,7 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React from 'react';
 import { TruckConfig } from '../types';
-import { Settings, Truck, Ruler, ShieldAlert, Target, Crosshair, Flame, RefreshCcw } from 'lucide-react';
+import { Settings, Truck, Ruler, ShieldAlert, Flame, RefreshCcw } from 'lucide-react';
 
 interface ConfigPanelProps {
   config: TruckConfig;
@@ -9,65 +9,6 @@ interface ConfigPanelProps {
 }
 
 const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
-  const joystickRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-
-  const MAX_YAW = Math.PI / 3;
-  const MAX_PITCH = Math.PI / 6;
-
-  const handleJoystickMove = useCallback((clientX: number, clientY: number) => {
-    if (!joystickRef.current || !config.isLadderDeployed) return;
-
-    const rect = joystickRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const radius = rect.width / 2;
-
-    let dx = (clientX - centerX) / radius;
-    let dy = (clientY - centerY) / radius;
-
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance > 1) {
-      dx /= distance;
-      dy /= distance;
-    }
-
-    onChange({
-      cannonYaw: dx * MAX_YAW,
-      cannonPitch: -dy * MAX_PITCH
-    });
-  }, [config.isLadderDeployed, onChange]);
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (!config.isLadderDeployed) return;
-    setIsDragging(true);
-    handleJoystickMove(e.clientX, e.clientY);
-  };
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (isDragging) handleJoystickMove(e.clientX, e.clientY);
-    };
-    const onMouseUp = () => setIsDragging(false);
-    if (isDragging) {
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, [isDragging, handleJoystickMove]);
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    if (!config.isLadderDeployed) return;
-    setIsDragging(true);
-    handleJoystickMove(e.touches[0].clientX, e.touches[0].clientY);
-  };
-
-  const knobX = (config.cannonYaw / MAX_YAW) * 50;
-  const knobY = (-config.cannonPitch / MAX_PITCH) * 50;
-
   return (
     <div className="flex flex-col gap-6 p-6 bg-slate-800/50 backdrop-blur-xl border-l border-white/5 h-full overflow-y-auto w-80 shadow-2xl">
       <div className="flex items-center gap-2 mb-2">
@@ -158,41 +99,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
         </div>
       </section>
 
-      <section className="pt-4 border-t border-white/5 flex flex-col items-center">
-          <div className="w-full flex items-center justify-between mb-4 px-1">
-              <div className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-blue-400" />
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Monitor Control</h4>
-              </div>
-          </div>
-
-          <div 
-              ref={joystickRef}
-              onMouseDown={onMouseDown}
-              onTouchStart={onTouchStart}
-              className={`relative w-48 h-48 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair overflow-hidden shadow-inner ${
-                  config.isLadderDeployed ? 'border-blue-500/30' : 'border-slate-700 opacity-30 grayscale pointer-events-none'
-              }`}
-          >
-              <div className="absolute top-1/2 left-0 w-full h-px bg-white/5 -translate-y-1/2" />
-              <div className="absolute left-1/2 top-0 h-full w-px bg-white/5 -translate-x-1/2" />
-              <Crosshair className={`w-8 h-8 opacity-10 ${config.isLadderDeployed ? 'text-blue-400' : 'text-slate-500'}`} />
-
-              <div 
-                  className={`absolute w-12 h-12 rounded-full border-2 transition-transform shadow-2xl flex items-center justify-center ${
-                      isDragging ? 'scale-110 border-blue-400 bg-blue-500/20' : 'border-blue-500/50 bg-slate-800'
-                  }`}
-                  style={{ 
-                      transform: `translate(${knobX}%, ${knobY}%)`,
-                      left: 'calc(50% - 1.5rem)',
-                      top: 'calc(50% - 1.5rem)'
-                  }}
-              >
-                  <div className={`w-3 h-3 rounded-full ${isDragging ? 'bg-blue-400 animate-pulse' : 'bg-blue-500/50'}`} />
-              </div>
-          </div>
-      </section>
-
       <div className="mt-auto pt-6 border-t border-white/5">
         <div className="bg-slate-900 p-4 rounded-xl border border-yellow-500/20">
           <div className="flex items-center gap-2 mb-2">
@@ -205,6 +111,10 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, onChange }) => {
               <span className={config.outriggersExtended ? 'text-green-400' : 'text-red-400'}>
                 {config.outriggersExtended ? 'LOCKED' : 'UNSTABLE'}
               </span>
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-slate-500">MONITOR</span>
+              <span className="text-blue-400 uppercase font-bold">Auto-Tracking</span>
             </div>
           </div>
         </div>

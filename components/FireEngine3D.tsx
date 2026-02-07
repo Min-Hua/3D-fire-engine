@@ -110,7 +110,7 @@ const Fire: React.FC<{ config: TruckConfig; currentHealth: number }> = ({ config
   );
 };
 
-const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDrive }) => {
+const TruckModel: React.FC<ModelProps & { controlsRef: React.RefObject<any> }> = ({ config, onUpdateHealth, onUpdateDrive, controlsRef }) => {
   const groupRef = useRef<THREE.Group>(null);
   const ladderRef = useRef<THREE.Group>(null);
   const waterRef = useRef<THREE.Group>(null);
@@ -124,6 +124,85 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const velocity = useRef(0);
   const steering = useRef(0);
+
+  // Siren Audio Logic
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sirenNodeRef = useRef<{ oscillator: OscillatorNode, gain: GainNode } | null>(null);
+
+  useEffect(() => {
+    const initSiren = async () => {
+      if (config.sirenActive) {
+        // Create context on demand if it doesn't exist
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        
+        const ctx = audioCtxRef.current;
+
+        // CRITICAL: Resume context to bypass browser auto-play security
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
+        }
+        
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        // Use a mix of Triangle for tone and a bit of "edge"
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(450, ctx.currentTime);
+        
+        const now = ctx.currentTime;
+        const cycleTime = 1.8; // Seconds for one wail ramp
+        
+        // Schedule classic wail pattern for 2 minutes
+        for (let i = 0; i < 40; i++) {
+            osc.frequency.exponentialRampToValueAtTime(1100, now + (i * 2 * cycleTime) + cycleTime);
+            osc.frequency.exponentialRampToValueAtTime(450, now + (i * 2 * cycleTime) + (2 * cycleTime));
+        }
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.25, now + 0.3); // Fade in
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+
+        sirenNodeRef.current = { oscillator: osc, gain: gain };
+      } else {
+        if (sirenNodeRef.current) {
+          const { oscillator, gain } = sirenNodeRef.current;
+          const ctx = audioCtxRef.current;
+          if (ctx) {
+            const now = ctx.currentTime;
+            gain.gain.cancelScheduledValues(now);
+            gain.gain.setValueAtTime(gain.gain.value, now);
+            gain.gain.linearRampToValueAtTime(0, now + 0.4);
+            
+            setTimeout(() => {
+              try {
+                oscillator.stop();
+                oscillator.disconnect();
+                gain.disconnect();
+              } catch(e) {}
+            }, 500);
+          }
+          sirenNodeRef.current = null;
+        }
+      }
+    };
+
+    initSiren();
+
+    return () => {
+      if (sirenNodeRef.current) {
+        try {
+          sirenNodeRef.current.oscillator.stop();
+          sirenNodeRef.current.oscillator.disconnect();
+          sirenNodeRef.current.gain.disconnect();
+        } catch(e) {}
+      }
+    };
+  }, [config.sirenActive]);
 
   useEffect(() => {
     const handleDown = (e: KeyboardEvent) => setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: true }));
@@ -139,9 +218,9 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
   useFrame((state) => {
     if (!groupRef.current) return;
 
-    // Driving Physics - FURTHER REDUCED SPEED
+    // Driving Physics
     if (config.isDriveMode) {
-      const accel = 0.004; // Even slower for heavy feel
+      const accel = 0.004; 
       const friction = 0.96; 
       const turnSpeed = 0.022; 
 
@@ -165,25 +244,40 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
         speed: Math.abs(velocity.current * 180), 
         position: { x: groupRef.current.position.x, y: 0, z: groupRef.current.position.z }
       });
+
+      // CAMERA FOLLOW LOGIC
+      if (controlsRef.current) {
+        controlsRef.current.target.lerp(groupRef.current.position, 0.1);
+        const isMoving = Math.abs(velocity.current) > 0.01;
+        if (isMoving) {
+          const chaseOffset = new THREE.Vector3(-18, 8, 0); 
+          chaseOffset.applyQuaternion(groupRef.current.quaternion);
+          const desiredPos = groupRef.current.position.clone().add(chaseOffset);
+          state.camera.position.lerp(desiredPos, 0.05);
+        }
+        controlsRef.current.update();
+      }
     }
 
-    // Camera Centering Follow Logic
-    if (config.isDriveMode) {
-      // Offset position relative to truck
-      const cameraOffset = new THREE.Vector3(-18, 10, 0).applyQuaternion(groupRef.current.quaternion);
-      const targetPos = groupRef.current.position.clone().add(cameraOffset);
-      
-      // Smoothly move camera but always look exactly at truck center
-      state.camera.position.lerp(targetPos, 0.1);
-      state.camera.lookAt(groupRef.current.position);
-    }
+    // AUTOMATED CANNON AIMING LOGIC
+    if (cannonBaseRef.current && cannonBarrelRef.current) {
+      if (config.isFireActive && config.fireHealth > 0 && config.isLadderDeployed) {
+        const firePos = new THREE.Vector3(30, 0, 30);
+        
+        // Calculate Yaw relative to cannon base's parent
+        const localTargetBase = cannonBaseRef.current.parent!.worldToLocal(firePos.clone());
+        const targetYaw = Math.atan2(localTargetBase.z, localTargetBase.x);
+        cannonBaseRef.current.rotation.y = THREE.MathUtils.lerp(cannonBaseRef.current.rotation.y, -targetYaw, 0.1);
 
-    // Cannon and Water Logic
-    if (cannonBaseRef.current) {
-      cannonBaseRef.current.rotation.y = THREE.MathUtils.lerp(cannonBaseRef.current.rotation.y, config.cannonYaw, 0.1);
-    }
-    if (cannonBarrelRef.current) {
-      cannonBarrelRef.current.rotation.z = THREE.MathUtils.lerp(cannonBarrelRef.current.rotation.z, config.cannonPitch, 0.1);
+        // Calculate Pitch relative to barrel's parent
+        const localTargetBarrel = cannonBarrelRef.current.parent!.worldToLocal(firePos.clone());
+        const targetPitch = Math.atan2(localTargetBarrel.y, localTargetBarrel.x);
+        cannonBarrelRef.current.rotation.z = THREE.MathUtils.lerp(cannonBarrelRef.current.rotation.z, targetPitch, 0.1);
+      } else {
+        // Return to neutral position
+        cannonBaseRef.current.rotation.y = THREE.MathUtils.lerp(cannonBaseRef.current.rotation.y, 0, 0.05);
+        cannonBarrelRef.current.rotation.z = THREE.MathUtils.lerp(cannonBarrelRef.current.rotation.z, 0, 0.05);
+      }
     }
 
     if (waterRef.current && config.isLadderDeployed) {
@@ -196,11 +290,28 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
           child.position.x = 0; child.position.y = 0; child.scale.set(1, 1, 1);
         }
       });
+
+      // FIRE SUPPRESSION LOGIC
+      if (config.isFireActive && config.fireHealth > 0) {
+        const nozzlePos = new THREE.Vector3();
+        waterRef.current.getWorldPosition(nozzlePos);
+        const nozzleDir = new THREE.Vector3(1, 0, 0);
+        const nozzleQuat = new THREE.Quaternion();
+        waterRef.current.getWorldQuaternion(nozzleQuat);
+        nozzleDir.applyQuaternion(nozzleQuat);
+        const landingPoint = nozzlePos.clone().add(nozzleDir.multiplyScalar(16));
+        const firePos = new THREE.Vector3(30, 0, 30);
+        const distToFire = landingPoint.distanceTo(firePos);
+        if (distToFire < 5.5) {
+          const suppressionRate = 0.25 * (11 - config.fireStrength) / 5; 
+          onUpdateHealth(Math.max(0, config.fireHealth - suppressionRate));
+        }
+      }
     } else if (waterRef.current) {
       waterRef.current.visible = false;
     }
 
-    // Siren
+    // Visual Siren Strobe Logic
     if (config.sirenActive) {
       const t = state.clock.elapsedTime * 10;
       const intensity = Math.sin(t) > 0 ? 15 : 0;
@@ -208,6 +319,11 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
       if (blueStrobeRef.current) (blueStrobeRef.current.material as any).emissiveIntensity = 15 - intensity;
       if (redLightRef.current) redLightRef.current.intensity = intensity * 2;
       if (blueLightRef.current) blueLightRef.current.intensity = (15 - intensity) * 2;
+    } else {
+      if (redStrobeRef.current) (redStrobeRef.current.material as any).emissiveIntensity = 0;
+      if (blueStrobeRef.current) (blueStrobeRef.current.material as any).emissiveIntensity = 0;
+      if (redLightRef.current) redLightRef.current.intensity = 0;
+      if (blueLightRef.current) blueLightRef.current.intensity = 0;
     }
 
     // Ladder Movement
@@ -301,19 +417,37 @@ const TruckModel: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDriv
 };
 
 const FireEngine3D: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDrive, onReset }) => {
+  const controlsRef = useRef<any>(null);
+
   return (
     <div className="w-full h-full bg-[#020617] rounded-xl overflow-hidden shadow-2xl relative border border-white/5">
       <Canvas shadows gl={{ antialias: true }}>
         <PerspectiveCamera makeDefault position={[22, 14, 28]} fov={32} />
-        {!config.isDriveMode && <OrbitControls enableDamping dampingFactor={0.05} minDistance={10} maxDistance={60} target={[6, 1, 0]} />}
+        
+        <OrbitControls 
+          ref={controlsRef}
+          enableDamping 
+          dampingFactor={0.05} 
+          minDistance={8} 
+          maxDistance={120} 
+          enablePan={false}
+          target={[0, 0, 0]} 
+        />
+
         <Environment preset="city" />
         <Stars radius={150} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
         <ambientLight intensity={1.0} />
         <spotLight position={[30, 40, 25]} angle={0.2} penumbra={1} intensity={5} castShadow />
+        
         <Town />
-        <TruckModel config={config} onUpdateHealth={onUpdateHealth} onUpdateDrive={onUpdateDrive} />
+        <TruckModel 
+          config={config} 
+          onUpdateHealth={onUpdateHealth} 
+          onUpdateDrive={onUpdateDrive} 
+          controlsRef={controlsRef}
+        />
         <Fire config={config} currentHealth={config.fireHealth} />
-        <ContactShadows position={[0, 0, 0]} opacity={0.7} scale={60} blur={2} far={10} />
+        <ContactShadows position={[0, 0, 0]} opacity={0.7} scale={100} blur={2} far={10} />
       </Canvas>
       
       {/* Driving HUD */}
@@ -346,7 +480,7 @@ const FireEngine3D: React.FC<ModelProps> = ({ config, onUpdateHealth, onUpdateDr
                     <Keyboard className="w-5 h-5 text-slate-400" />
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[9px] font-bold text-slate-500 uppercase">Input Active</span>
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Input Active</span>
                     <span className="text-[10px] text-white font-black uppercase">WASD CONTROLS</span>
                 </div>
             </div>
